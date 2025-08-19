@@ -1,5 +1,4 @@
-# Pin the Appsmith version you want (example: v1.85). Avoid :latest in prod.
-FROM docker.io/appsmith/appsmith-ee:v1.85
+FROM docker.io/appsmith/appsmith-ce:latest
 
 # Tools to manage Linux file capabilities/xattrs (ignore if unavailable)
 RUN apt-get update && \
