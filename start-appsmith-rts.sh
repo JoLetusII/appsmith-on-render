@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+echo "[rts] node version:"; node -v || true
 echo "[rts] locating entrypoint..."
 if [[ -x /opt/appsmith/scripts/start-rts.sh ]]; then
   echo "[rts] using scripts/start-rts.sh"
