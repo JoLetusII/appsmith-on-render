@@ -1,12 +1,16 @@
-#!/bin/sh
-set -e
+#!/bin/bash
 
-# Make Appsmith listen on Render's assigned port
-export SERVER_PORT="${PORT:-8080}"
+# Ensure Render assigns the external URL correctly
+if [ -n "$RENDER_EXTERNAL_URL" ]; then
+  export APPSMITH_SERVER_URL="$RENDER_EXTERNAL_URL"
+fi
 
-# Advertise the correct external URL for redirects/OAuth behind Render’s proxy
-[ -n "$RENDER_EXTERNAL_URL" ] && export APPSMITH_SERVER_URL="$RENDER_EXTERNAL_URL"
+# Force Appsmith to use the internal server port (Caddy will proxy)
+export SERVER_PORT=8080
 
-# Start Appsmith's normal supervisor-driven entrypoint (without Caddy)
+# Optional JVM tuning for low-memory plans
+export JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# Run the official Appsmith entrypoint
 exec /opt/appsmith/entrypoint.sh
 
