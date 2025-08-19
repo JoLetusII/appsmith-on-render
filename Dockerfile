@@ -1,34 +1,20 @@
-FROM ubuntu:24.04
+# Use EE or CE; pin to the version you want.
+FROM docker.io/appsmith/appsmith-ee:v1.85
+# FROM docker.io/appsmith/appsmith-ce:v1.85
 
-# 1) Install runtime deps
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ca-certificates curl gnupg supervisor nginx postgresql-common redis-server \
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nginx \
     && rm -rf /var/lib/apt/lists/*
 
-# 2) Copy Appsmith bits from official image (editor, scripts, server)
-#    You can also curl the release artifact if you prefer; using multi-stage keeps parity.
-FROM docker.io/appsmith/appsmith-ee:v1.85 AS appsmith
-# or appsmith-ce:v1.85
-
-FROM ubuntu:24.04
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ca-certificates curl gnupg supervisor nginx && rm -rf /var/lib/apt/lists/*
-
-# Create stacks dir (Render disk will mount here)
+# Ensure expected dirs exist even before the Render disk mounts
 RUN mkdir -p /appsmith-stacks /tmp/appsmith/www
 
-# Bring over Appsmith runtime from the official image
-COPY --from=appsmith /opt/appsmith /opt/appsmith
-COPY --from=appsmith /opt/appsmith/editor /opt/appsmith/editor
-
-# Nginx & Supervisor configs
-COPY nginx.conf /etc/nginx/nginx.conf
+# Replace Supervisor config (removes Caddy, adds nginx)
 COPY supervisord.conf /etc/supervisor/supervisord.conf
 
-# Environment compatibility
-ENV APPSMITH_STANDALONE=1 \
-    HOME=/root
+# Provide nginx config that binds to $PORT and proxies to the Appsmith server
+COPY nginx.conf /etc/nginx/nginx.conf
 
-# Expose nothing explicitly; Render injects $PORT and routes to it via nginx
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+# Keep the image’s original entrypoint (it initializes env/files and then runs supervisor)
+# No CMD/ENTRYPOINT override needed.
 
