@@ -1,69 +1,55 @@
-worker_processes  auto;
+user www-data;
+worker_processes auto;
 
-events { worker_connections 1024; }
+events {
+  worker_connections  1024;
+}
 
 http {
-  sendfile        on;
-  tcp_nopush      on;
-  tcp_nodelay     on;
+  sendfile on;
+  tcp_nopush on;
+  tcp_nodelay on;
   keepalive_timeout 65;
   types_hash_max_size 2048;
-
   include       /etc/nginx/mime.types;
   default_type  application/octet-stream;
 
-  access_log  /var/log/nginx/access.log;
-  error_log   /var/log/nginx/error.log;
+  log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+  access_log  /var/log/nginx/access.log  main;
+  error_log   /var/log/nginx/error.log warn;
 
-  upstream appsmith_server    { server 127.0.0.1:8080; }
-  upstream appsmith_rts       { server 127.0.0.1:8091; }
-
+  # App listens on $PORT (Render injects it)
   server {
     listen       ${PORT};
-    listen       [::]:${PORT};
     server_name  _;
 
-    # Static editor UI
-    root /opt/appsmith/editor;
-    index index.html;
-
-    # Health (use this as Render/Railway health check)
-    location = /api/v1/health {
-      proxy_pass http://appsmith_server;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # Appsmith static + API (proxied to Java server on 8080 via Caddy replacement already in the image)
+    location / {
+      proxy_pass http://127.0.0.1:8080/;
+      proxy_set_header Host              $host;
+      proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
       proxy_http_version 1.1;
+      proxy_read_timeout 300;
     }
 
-    # Supervisor UI via UNIX socket
+    # Supervisor UI (proxied to Supervisor’s TCP UI on 127.0.0.1:9001)
+    location = /supervisor { return 301 /supervisor/; }
     location /supervisor/ {
-      proxy_pass http://unix:/tmp/supervisor.sock:/;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_intercept_errors on;
-      error_page 502 504 = /index.html;
-    }
-
-    # RTS (WebSocket + HTTP)
-    location /rts/ {
-      proxy_pass http://appsmith_rts/;
+      proxy_pass http://127.0.0.1:9001/;
+      proxy_set_header Host              $host;
+      proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
       proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
-      proxy_set_header Host $host;
-      proxy_read_timeout 600s;
+      proxy_read_timeout 300;
     }
 
-    # API to backend
-    location /api/ {
-      proxy_pass http://appsmith_server;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_http_version 1.1;
+    # Optional quick health check
+    location /_ping {
+      return 200 "ok\n";
+      add_header Content-Type text/plain;
     }
-
-    # SPA fallback
-    location / { try_files $uri /index.html; }
   }
 }
 
