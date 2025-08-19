@@ -7,7 +7,7 @@ RUN apt-get update \
       nginx supervisor gettext-base \
  && rm -rf /var/lib/apt/lists/*
 
-# Disable Caddy so entrypoint won’t choke on capabilities
+# Disable Caddy so upstream entrypoint never tries to run it with caps
 RUN if [ -x /opt/caddy/caddy ]; then \
       mv /opt/caddy/caddy /opt/caddy/caddy.real || true; \
       printf '#!/usr/bin/env sh\necho "[shim] Caddy disabled"\nexit 0\n' > /opt/caddy/caddy; \
@@ -17,7 +17,7 @@ RUN if [ -x /opt/caddy/caddy ]; then \
 # Ensure dirs exist
 RUN mkdir -p /appsmith-stacks /tmp/appsmith/www
 
-# Configs
+# Config & launch scripts
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY supervisord.conf /etc/supervisor/supervisord.conf
 COPY start.sh /usr/local/bin/start.sh
@@ -25,7 +25,8 @@ COPY start-appsmith-server.sh /usr/local/bin/start-appsmith-server.sh
 COPY start-appsmith-rts.sh    /usr/local/bin/start-appsmith-rts.sh
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/start-appsmith-*.sh
 
-# Run our launcher (renders nginx.conf and starts supervisord)
+# Render/Railway inject $PORT at runtime; start.sh templates nginx then launches supervisord
 CMD ["/usr/local/bin/start.sh"]
+
 
 
