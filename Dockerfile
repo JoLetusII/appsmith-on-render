@@ -1,33 +1,34 @@
-FROM docker.io/appsmith/appsmith-ce:latest
+FROM ubuntu:24.04
 
-# Tools to manage Linux file capabilities/xattrs (ignore if unavailable)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libcap2-bin attr && \
-    rm -rf /var/lib/apt/lists/*
+# 1) Install runtime deps
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates curl gnupg supervisor nginx postgresql-common redis-server \
+    && rm -rf /var/lib/apt/lists/*
 
-# Wrap the Caddy binary:
-# - move the real binary
-# - strip capabilities so exec won't EPERM on Render
-# - install a wrapper that edits the Caddyfile to use $PORT and disables tls
-RUN set -e; \
-    if [ -x /opt/caddy/caddy ]; then \
-      mv /opt/caddy/caddy /opt/caddy/caddy.real; \
-      (setcap -r /opt/caddy/caddy.real 2>/dev/null || true); \
-      (setfattr -x security.capability /opt/caddy/caddy.real 2>/dev/null || true); \
-      printf '%s\n' \
-        '#!/bin/sh' \
-        'set -e' \
-        'if [ -n "$PORT" ] && [ -f /etc/caddy/Caddyfile ]; then' \
-        '  sed -i "s/:80/:$PORT/g; s/:443/:$PORT/g" /etc/caddy/Caddyfile || true' \
-        '  sed -i "/^[[:space:]]*tls\\b/d" /etc/caddy/Caddyfile 2>/dev/null || true' \
-        'fi' \
-        'exec /opt/caddy/caddy.real "$@"' \
-        > /opt/caddy/caddy && chmod +x /opt/caddy/caddy; \
-    fi
+# 2) Copy Appsmith bits from official image (editor, scripts, server)
+#    You can also curl the release artifact if you prefer; using multi-stage keeps parity.
+FROM docker.io/appsmith/appsmith-ee:v1.85 AS appsmith
+# or appsmith-ce:v1.85
 
-# (Optional) keep your helper start script; it just sets SERVER_PORT & URL then hands off
-COPY start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
+FROM ubuntu:24.04
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates curl gnupg supervisor nginx && rm -rf /var/lib/apt/lists/*
 
-ENTRYPOINT ["/usr/local/bin/start.sh"]
+# Create stacks dir (Render disk will mount here)
+RUN mkdir -p /appsmith-stacks /tmp/appsmith/www
+
+# Bring over Appsmith runtime from the official image
+COPY --from=appsmith /opt/appsmith /opt/appsmith
+COPY --from=appsmith /opt/appsmith/editor /opt/appsmith/editor
+
+# Nginx & Supervisor configs
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY supervisord.conf /etc/supervisor/supervisord.conf
+
+# Environment compatibility
+ENV APPSMITH_STANDALONE=1 \
+    HOME=/root
+
+# Expose nothing explicitly; Render injects $PORT and routes to it via nginx
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 
