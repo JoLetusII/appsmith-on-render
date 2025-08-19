@@ -1,3 +1,6 @@
+# NOTE: 'env' directives belong in the *main* context, not inside http {}
+# We don't need them since we render ${PORT} with envsubst.
+
 worker_processes  auto;
 
 events {
@@ -14,35 +17,23 @@ http {
   include       /etc/nginx/mime.types;
   default_type  application/octet-stream;
 
-  # Basic logs; feel free to tune or disable in production
   access_log  /var/log/nginx/access.log;
   error_log   /var/log/nginx/error.log;
 
-  # Let nginx inherit environment variables if you ever need them
-  env PORT;
-
-  upstream appsmith_server {
-    server 127.0.0.1:8080;   # Appsmith Java backend
-  }
-
-  upstream appsmith_rts {
-    server 127.0.0.1:8091;   # Real-time service
-  }
-
-  upstream appsmith_supervisor {
-    server 127.0.0.1:9001;   # Supervisor UI
-  }
+  # Upstreams
+  upstream appsmith_server { server 127.0.0.1:8080; }
+  upstream appsmith_rts    { server 127.0.0.1:8091; }
+  upstream appsmith_supervisor { server 127.0.0.1:9001; }
 
   server {
     listen       ${PORT};
     listen       [::]:${PORT};
     server_name  _;
 
-    # Serve the built editor assets directly (bundled in the image)
-    root /opt/appsmith/editor;
+    root /opt/appsmith/editor;   # static UI
     index index.html;
 
-    # Health check endpoint (Render health check can hit this)
+    # Health for Render
     location = /api/v1/health {
       proxy_pass http://appsmith_server;
       proxy_set_header Host $host;
@@ -50,14 +41,16 @@ http {
       proxy_http_version 1.1;
     }
 
-    # Supervisor UI (optional)
+    # Supervisor UI
     location /supervisor/ {
       proxy_pass http://appsmith_supervisor/;
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_intercept_errors on;
+      error_page 502 504 = /index.html;
     }
 
-    # RTS websocket & http
+    # RTS (WebSocket + HTTP)
     location /rts/ {
       proxy_pass http://appsmith_rts/;
       proxy_http_version 1.1;
@@ -75,11 +68,12 @@ http {
       proxy_http_version 1.1;
     }
 
-    # Everything else: serve editor (SPA fallback)
+    # SPA fallback
     location / {
       try_files $uri /index.html;
     }
   }
 }
+
 
 
