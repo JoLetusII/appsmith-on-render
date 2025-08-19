@@ -1,4 +1,11 @@
 .git
 .gitignore
-.dockerignore
-*.md
+node_modules
+Dockerfile
+*.log
+.tmp
+dist
+build
+.env
+.env.*
+
